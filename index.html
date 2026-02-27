@@ -1220,20 +1220,18 @@ function renderPdvProducts(){
 // MODAL ADICIONAR ITEM
 // ═══════════════════════════════
 function abrirModalItem(prodId, catHint){
-  // Verificar estoque
-  let prod=null;
-  for(const [cat,prods] of Object.entries(getCategorias())){const f=prods.find(p=>p.id===prodId);if(f){prod=f;break;}}
-  if(prod && !temEstoque(prod)){
-    showNotif(`⛔ "${prod.nome}" sem estoque!`,'error');
-    return;
-  }
   // Encontrar produto em todas as categorias
   let prod=null, cat=catHint;
-  for(const [c,prods] of Object.entries(CATEGORIAS)){
+  for(const [c,prods] of Object.entries(getCategorias())){
     const found=prods.find(p=>p.id===prodId);
     if(found){prod=found;cat=c;break;}
   }
   if(!prod)return;
+  // Verificar estoque
+  if(!temEstoque(prod)){
+    showNotif(`⛔ "${prod.nome}" sem estoque!`,'error');
+    return;
+  }
 
   const tipo=prod.tipo||'normal';
 
