@@ -1041,7 +1041,7 @@ async function loadStateFirebase(){
     if(vendas)state.vendas=vendas;
     if(entradas)state.entradas=entradas;
     if(caixa)state.caixa=caixa;
-    if(estoque)state.estoque=estoque;
+    if(estoque){ state.estoque = estoque && estoque.data ? estoque.data : estoque; }
     if(clientes)state.clientes=clientes;
     if(delivery)state.pedidosDelivery=delivery;
     if(cupons)state.cupons=cupons;
@@ -1073,7 +1073,17 @@ function startRealtimeListeners(){
   fbListen('pedidosDelivery', data=>{ state.pedidosDelivery=data; renderDelivery(); });
   fbListen('cupons', data=>{ state.cupons=data; renderCupons(); });
   fbListen('caixa', data=>{ state.caixa=data; renderCaixa(); updateDashboard(); });
-  fbListen('estoque', data=>{ state.estoque=data; renderEstoque(); updateDashboard(); });
+  fbListen('estoque', raw=>{ 
+    const data = raw && raw.data ? raw.data : raw;
+    const ts = raw && raw.ts ? raw.ts : 0;
+    const agora = Date.now();
+    const editadoHa = agora - (window._estoqueEditadoEm||0);
+    // Só atualiza do Firebase se: não editou nos últimos 30s E Firebase é mais recente que o local
+    if(editadoHa > 30000){
+      state.estoque = data;
+      renderEstoque(); updateDashboard();
+    }
+  });
 }
 function saveState(){
   const precos={};
@@ -1086,7 +1096,7 @@ function saveState(){
     fbSave('vendas', state.vendas);
     fbSave('entradas', state.entradas);
     fbSave('caixa', state.caixa);
-    fbSave('estoque', state.estoque);
+    fbSave('estoque', {data: state.estoque, ts: Date.now()});
     fbSave('clientes', state.clientes);
     fbSave('pedidosDelivery', state.pedidosDelivery);
     fbSave('cupons', state.cupons);
@@ -1923,11 +1933,11 @@ function renderEstoque(filtro,busca){
         : diff > 0.001
           ? `<td style="color:var(--gold);">${diff > 0 ? '+':''}${diff.toFixed(3)} ${i.unidade}</td>`
           : `<td style="color:var(--success);">✅ Conferido</td>`
-      : `<td><button class="btn btn-outline btn-sm" onclick="contarFisico('${i.id}')" style="font-size:11px;padding:3px 8px;">Contar</button></td>`;
+      : `<td><button class="btn btn-outline btn-sm" onclick="contarFisico('${i.id}')" style="font-size:11px;padding:3px 8px;">📦 Contar</button></td>`;
     return `<tr>
       <td><strong>${i.nome}</strong><br><span style="font-size:11px;color:var(--text3);">Compra: ${fmtM(i.preco_ref||0)}/${i.unidade}</span></td>
       <td style="font-weight:600;color:var(--gold);">${i.estoque} ${i.unidade}</td>
-      ${divCell.replace('</td>','</td>').replace('<td>','<td>').replace('onclick="contarFisico',`onclick="contarFisico`)}
+      ${divCell}
       <td>${fisico!==null?`<span style="font-size:12px;">${fisico} ${i.unidade} <button onclick="resetFisico('${i.id}')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:10px;">✕</button></span>`:`<span style="color:var(--text3);font-size:12px;">—</span>`}</td>
       <td style="color:var(--text2);">${i.unidade}</td>
       <td><span class="badge ${cls}">${sit}</span></td>
