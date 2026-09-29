@@ -1,4 +1,168 @@
 <!DOCTYPE html>
+// ═══════════════════════════════════════════════════════════
+// login.js — Login por e-mail/senha para o sistema Point do Pastel
+// Coloque este arquivo na MESMA pasta do index.html e adicione
+// UMA linha antes de </body>:   <script src="login.js"></script>
+// ═══════════════════════════════════════════════════════════
+
+let FB_TOKEN = null;
+let FB_REFRESH = null;
+let _fbFalhou = false;
+
+const authHeaders = () => (FB_TOKEN ? { Authorization: 'Bearer ' + FB_TOKEN } : {});
+const DOC_URL = (c) =>
+  `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/pdp/${c}?key=${FB_APIKEY}`;
+
+// ── Status "Online/Offline": só fica Online se o carregamento deu certo ──
+function showSyncStatus(online) {
+  if (online && _fbFalhou) {
+    online = false;
+    showNotif('Não consegui carregar da nuvem. Nada será salvo lá até resolver.', 'error');
+  }
+  firebaseOnline = online;
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  el.textContent = online ? '☁️ Online' : '💾 Offline';
+  el.style.color = online ? 'var(--success)' : 'var(--gold)';
+}
+
+// ── Funções do Firebase, agora enviando o token de login ──
+async function fbSave(colecao, dados) {
+  try {
+    const body = { fields: { dados: { stringValue: JSON.stringify(dados) }, ts: { doubleValue: Date.now() } } };
+    const r = await fetch(DOC_URL(colecao), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    console.warn('fbSave error:', colecao, e.message);
+    const el = document.getElementById('sync-status');
+    if (el) {
+      el.textContent = '⚠️ Erro ao salvar na nuvem';
+      el.style.color = 'var(--danger)';
+    }
+  }
+}
+
+async function fbLoad(colecao) {
+  try {
+    const r = await fetch(DOC_URL(colecao), { headers: authHeaders() });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error(await r.text());
+    const doc = await r.json();
+    if (doc.fields && doc.fields.dados) return JSON.parse(doc.fields.dados.stringValue);
+  } catch (e) {
+    _fbFalhou = true;
+    console.warn('fbLoad error:', colecao, e.message);
+  }
+  return null;
+}
+
+function fbListen(colecao, callback) {
+  let lastTs = 0;
+  const poll = async () => {
+    try {
+      const r = await fetch(DOC_URL(colecao), { headers: authHeaders() });
+      if (!r.ok) return;
+      const doc = await r.json();
+      if (doc.fields && doc.fields.ts) {
+        const ts = doc.fields.ts.doubleValue || Number(doc.fields.ts.integerValue) || 0;
+        if (ts > lastTs) {
+          lastTs = ts;
+          if (doc.fields.dados) callback(JSON.parse(doc.fields.dados.stringValue));
+        }
+      }
+    } catch (e) {}
+  };
+  poll();
+  _pollTimers[colecao] = setInterval(poll, 8000);
+}
+
+// ── Login ──
+async function entrar() {
+  const erro = document.getElementById('login-erro');
+  const btn = document.getElementById('login-btn');
+  erro.textContent = '';
+  btn.disabled = true;
+  try {
+    const r = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB_APIKEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('login-email').value.trim(),
+          password: document.getElementById('login-senha').value,
+          returnSecureToken: true,
+        }),
+      }
+    );
+    if (!r.ok) throw new Error('login');
+    const d = await r.json();
+    FB_TOKEN = d.idToken;
+    FB_REFRESH = d.refreshToken;
+    _fbFalhou = false;
+    document.getElementById('tela-login').remove();
+    setInterval(renovarToken, 50 * 60 * 1000); // o token vale 1 hora
+    _pdpCarregarNuvem();
+  } catch (e) {
+    erro.textContent = 'E-mail ou senha incorretos. Confira e tente de novo.';
+    btn.disabled = false;
+  }
+}
+
+async function renovarToken() {
+  try {
+    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_APIKEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(FB_REFRESH),
+    });
+    if (r.ok) {
+      const d = await r.json();
+      FB_TOKEN = d.id_token;
+      FB_REFRESH = d.refresh_token;
+    }
+  } catch (e) {}
+}
+
+function mostrarLogin() {
+  if (document.getElementById('tela-login')) return;
+  const tela = document.createElement('div');
+  tela.id = 'tela-login';
+  tela.style.cssText =
+    'position:fixed;inset:0;z-index:99999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;';
+  tela.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:340px;">
+      <h2 style="font-family:'Playfair Display',serif;font-size:24px;margin-bottom:4px;">Point do Pastel</h2>
+      <p style="color:var(--text3);font-size:13px;margin-bottom:18px;">Entre para abrir o sistema</p>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>E-mail</label>
+        <input id="login-email" type="email" autocomplete="username">
+      </div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label>Senha</label>
+        <input id="login-senha" type="password" autocomplete="current-password">
+      </div>
+      <button id="login-btn" class="btn btn-primary" style="width:100%;justify-content:center;padding:11px;">Entrar</button>
+      <p id="login-erro" style="color:var(--danger);font-size:12px;margin-top:10px;min-height:16px;"></p>
+    </div>`;
+  document.body.appendChild(tela);
+  document.getElementById('login-btn').addEventListener('click', entrar);
+  document.getElementById('login-senha').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') entrar();
+  });
+  document.getElementById('login-email').focus();
+}
+
+// ── Faz o sistema esperar o login antes de carregar os dados da nuvem ──
+const _pdpCarregarNuvem = window.loadStateFirebase;
+window.loadStateFirebase = function () {
+  if (FB_TOKEN) return _pdpCarregarNuvem();
+  mostrarLogin();
+};
 <div id="tela-login" style="position:fixed;inset:0;background:#0F0D0A;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#F5EDD8;padding:20px">
   <h2 style="font-family:'Playfair Display',serif">Point do Pastel</h2>
   <input id="login-email" type="email" placeholder="E-mail" style="padding:10px;border-radius:8px;width:260px;max-width:100%">
