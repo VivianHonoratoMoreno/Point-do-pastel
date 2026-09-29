@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<div id="tela-login" style="position:fixed;inset:0;background:#0F0D0A;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#F5EDD8;padding:20px">
+  <h2 style="font-family:'Playfair Display',serif">Point do Pastel</h2>
+  <input id="login-email" type="email" placeholder="E-mail" style="padding:10px;border-radius:8px;width:260px;max-width:100%">
+  <input id="login-senha" type="password" placeholder="Senha" style="padding:10px;border-radius:8px;width:260px;max-width:100%" onkeydown="if(event.key==='Enter')entrar()">
+  <button class="btn btn-primary" onclick="entrar()">Entrar</button>
+  <p id="login-erro" style="color:#C05050"></p>
+</div>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
